@@ -22,6 +22,8 @@
 
 // TODO implement copy-on-write
 
+// TODO do something with ensure_unique (probably it is some bullshit)
+
 namespace cxx {
 
 template <typename K, typename V> class binder {
