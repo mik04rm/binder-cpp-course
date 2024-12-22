@@ -28,15 +28,12 @@ namespace cxx {
 
 template <typename K, typename V> class binder {
   public:
-    // Constructors
     binder() noexcept;
     binder(binder const&);
     binder(binder&&) noexcept;
 
-    // Assignment operator
     binder& operator=(binder) noexcept;
 
-    // Methods
     void insert_front(K const& k, V const& v);
     void insert_after(K const& prev_k, K const& k, V const& v);
     void remove();
@@ -46,7 +43,6 @@ template <typename K, typename V> class binder {
     size_t size() const noexcept;
     void clear() noexcept;
 
-    // Iterator
     class const_iterator {
       public:
         using iterator_category = std::forward_iterator_tag;
