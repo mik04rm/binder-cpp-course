@@ -24,6 +24,8 @@
 
 // TODO do something with ensure_unique (probably it is some bullshit)
 
+// TODO exception safety
+
 namespace cxx {
 
 template <typename K, typename V> class binder {
