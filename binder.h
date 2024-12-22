@@ -1,11 +1,11 @@
 #ifndef BINDER_H
 #define BINDER_H
 
+#include <algorithm>
 #include <list>
-#include <unordered_map>
 #include <memory>
 #include <stdexcept>
-#include <algorithm>
+#include <unordered_map>
 
 // TODO are const everywhere where they should be?
 
@@ -20,36 +20,33 @@
 
 // TODO swaps in operator= ?
 
-
-
 // TODO implement copy-on-write
 
 namespace cxx {
 
-template <typename K, typename V>
-class binder {
-public:
+template <typename K, typename V> class binder {
+  public:
     // Constructors
     binder() noexcept;
-    binder(binder const &);
-    binder(binder &&) noexcept;
+    binder(binder const&);
+    binder(binder&&) noexcept;
 
     // Assignment operator
-    binder & operator=(binder) noexcept;
+    binder& operator=(binder) noexcept;
 
     // Methods
-    void insert_front(K const &k, V const &v);
-    void insert_after(K const &prev_k, K const &k, V const &v);
+    void insert_front(K const& k, V const& v);
+    void insert_after(K const& prev_k, K const& k, V const& v);
     void remove();
-    void remove(K const &);
-    V & read(K const &);
-    V const & read(K const &) const;
+    void remove(K const&);
+    V& read(K const&);
+    V const& read(K const&) const;
     size_t size() const noexcept;
     void clear() noexcept;
 
     // Iterator
     class const_iterator {
-    public:
+      public:
         using iterator_category = std::forward_iterator_tag;
         using value_type = V;
         using difference_type = std::ptrdiff_t;
@@ -61,32 +58,47 @@ public:
         reference operator*() const { return *it_; }
         pointer operator->() const { return &(*it_); }
 
-        const_iterator& operator++() { ++it_; return *this; }
-        const_iterator operator++(int) { const_iterator tmp = *this; ++it_; return tmp; }
+        const_iterator& operator++() {
+            ++it_;
+            return *this;
+        }
+        const_iterator operator++(int) {
+            const_iterator tmp = *this;
+            ++it_;
+            return tmp;
+        }
 
-        friend bool operator==(const const_iterator& a, const const_iterator& b) { return a.it_ == b.it_; }
-        friend bool operator!=(const const_iterator& a, const const_iterator& b) { return a.it_ != b.it_; }
+        friend bool operator==(const const_iterator& a,
+                               const const_iterator& b) {
+            return a.it_ == b.it_;
+        }
+        friend bool operator!=(const const_iterator& a,
+                               const const_iterator& b) {
+            return a.it_ != b.it_;
+        }
 
-    private:
+      private:
         typename std::list<V>::const_iterator it_;
     };
 
     const_iterator cbegin() const noexcept;
     const_iterator cend() const noexcept;
 
-private:
+  private:
     std::shared_ptr<std::list<V>> notes_;
-    std::shared_ptr<std::unordered_map<K, typename std::list<V>::iterator>> index_;
+    std::shared_ptr<std::unordered_map<K, typename std::list<V>::iterator>>
+        index_;
     void ensure_unique();
 };
 
 template <typename K, typename V>
 binder<K, V>::binder() noexcept
     : notes_(std::make_shared<std::list<V>>()),
-      index_(std::make_shared<std::unordered_map<K, typename std::list<V>::iterator>>()) {}
+      index_(std::make_shared<
+             std::unordered_map<K, typename std::list<V>::iterator>>()) {}
 
 template <typename K, typename V>
-binder<K, V>::binder(binder const &other)
+binder<K, V>::binder(binder const& other)
     : notes_(other.notes_), index_(other.index_) {}
 
 template <typename K, typename V>
@@ -101,7 +113,7 @@ binder<K, V>& binder<K, V>::operator=(binder other) noexcept {
 }
 
 template <typename K, typename V>
-void binder<K, V>::insert_front(K const &k, V const &v) {
+void binder<K, V>::insert_front(K const& k, V const& v) {
     ensure_unique();
     if (index_->count(k)) {
         throw std::invalid_argument("Key already exists");
@@ -111,7 +123,7 @@ void binder<K, V>::insert_front(K const &k, V const &v) {
 }
 
 template <typename K, typename V>
-void binder<K, V>::insert_after(K const &prev_k, K const &k, V const &v) {
+void binder<K, V>::insert_after(K const& prev_k, K const& k, V const& v) {
     ensure_unique();
     auto it = index_->find(prev_k);
     if (it == index_->end() || index_->count(k)) {
@@ -121,20 +133,19 @@ void binder<K, V>::insert_after(K const &prev_k, K const &k, V const &v) {
     index_->emplace(k, new_it);
 }
 
-template <typename K, typename V>
-void binder<K, V>::remove() {
+template <typename K, typename V> void binder<K, V>::remove() {
     ensure_unique();
     if (notes_->empty()) {
         throw std::invalid_argument("Binder is empty");
     }
-    index_->erase(std::find_if(index_->begin(), index_->end(), [this](const auto& pair) {
-        return pair.second == notes_->begin();
-    }));
+    index_->erase(
+        std::find_if(index_->begin(), index_->end(), [this](const auto& pair) {
+            return pair.second == notes_->begin();
+        }));
     notes_->pop_front();
 }
 
-template <typename K, typename V>
-void binder<K, V>::remove(K const &k) {
+template <typename K, typename V> void binder<K, V>::remove(K const& k) {
     ensure_unique();
     auto it = index_->find(k);
     if (it == index_->end()) {
@@ -144,8 +155,7 @@ void binder<K, V>::remove(K const &k) {
     index_->erase(it);
 }
 
-template <typename K, typename V>
-V & binder<K, V>::read(K const &k) {
+template <typename K, typename V> V& binder<K, V>::read(K const& k) {
     auto it = index_->find(k);
     if (it == index_->end()) {
         throw std::invalid_argument("Key not found");
@@ -155,7 +165,7 @@ V & binder<K, V>::read(K const &k) {
 }
 
 template <typename K, typename V>
-V const & binder<K, V>::read(K const &k) const {
+V const& binder<K, V>::read(K const& k) const {
     auto it = index_->find(k);
     if (it == index_->end()) {
         throw std::invalid_argument("Key not found");
@@ -163,13 +173,11 @@ V const & binder<K, V>::read(K const &k) const {
     return *(it->second);
 }
 
-template <typename K, typename V>
-size_t binder<K, V>::size() const noexcept {
+template <typename K, typename V> size_t binder<K, V>::size() const noexcept {
     return notes_->size();
 }
 
-template <typename K, typename V>
-void binder<K, V>::clear() noexcept {
+template <typename K, typename V> void binder<K, V>::clear() noexcept {
     ensure_unique();
     notes_->clear();
     index_->clear();
@@ -185,11 +193,11 @@ typename binder<K, V>::const_iterator binder<K, V>::cend() const noexcept {
     return const_iterator(notes_->cend());
 }
 
-template <typename K, typename V>
-void binder<K, V>::ensure_unique() {
+template <typename K, typename V> void binder<K, V>::ensure_unique() {
     if (!notes_.unique() || !index_.unique()) {
         notes_ = std::make_shared<std::list<V>>(*notes_);
-        index_ = std::make_shared<std::unordered_map<K, typename std::list<V>::iterator>>(*index_);
+        index_ = std::make_shared<
+            std::unordered_map<K, typename std::list<V>::iterator>>(*index_);
     }
 }
 
