@@ -6,6 +6,7 @@
 #include <memory>
 #include <stdexcept>
 #include <unordered_map>
+#include <concepts>
 
 // TODO are const everywhere where they should be?
 
@@ -25,10 +26,31 @@
 // TODO do something with ensure_unique (probably it is some bullshit)
 
 // TODO exception safety
+namespace detail {
+    template<typename T>
+    concept ValueSemantics = requires(T const& a, T&& b, T c, T d) {
+        T();
+        T(a);
+        T(b);
+        c = d;
+    };
+    template<typename T>
+    concept kRequirements = ValueSemantics<T> && std::totally_ordered<T> && std::destructible<T>;
+    
+    template<typename T>
+    concept vRequirements = std::destructible<T> && requires(T const& a) {
+        T(a);
+    };
+
+
+}
+
 
 namespace cxx {
 
-template <typename K, typename V> class binder {
+template <typename K, typename V> 
+requires detail::kRequirements<K> && detail::vRequirements<V>
+class binder {
   public:
     binder() noexcept;
     binder(binder const&);
