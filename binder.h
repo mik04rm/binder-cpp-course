@@ -30,7 +30,7 @@ namespace cxx {
 
 template <typename K, typename V> class binder {
   public:
-    binder() noexcept;
+    binder();
     binder(binder const&);
     binder(binder&&) noexcept;
 
@@ -92,7 +92,7 @@ template <typename K, typename V> class binder {
 };
 
 template <typename K, typename V>
-binder<K, V>::binder() noexcept
+binder<K, V>::binder()
     : notes_(std::make_shared<std::list<V>>()),
       index_(std::make_shared<
              std::unordered_map<K, typename std::list<V>::iterator>>()) {}
@@ -160,7 +160,6 @@ template <typename K, typename V> V& binder<K, V>::read(K const& k) {
     if (it == index_->end()) {
         throw std::invalid_argument("Key not found");
     }
-    ensure_unique();
     return *(it->second);
 }
 
