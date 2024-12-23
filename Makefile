@@ -1,15 +1,15 @@
 CXX = g++
 CXXFLAGS = -Wall -Wextra -O2 -std=c++20
-TARGET = binder_example.e
-SOURCES = binder_example.cpp
+TARGETS = binder_example.e binder_example_1.e
+SOURCES = binder_example.cpp binder_example_1.cpp
 HEADERS = binder.h
 
-all: $(TARGET)
+all: $(TARGETS)
 
-$(TARGET): $(SOURCES) $(HEADERS)
-	$(CXX) $(CXXFLAGS) -o $(TARGET) $(SOURCES)
+%.e: %.cpp $(HEADERS)
+	$(CXX) $(CXXFLAGS) -o $@ $<
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGETS)
 
 .PHONY: all clean
