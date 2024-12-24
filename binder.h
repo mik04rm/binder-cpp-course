@@ -116,6 +116,7 @@ void binder<K, V>::insert_front(K const& k, V const& v) {
     if (index_->count(k)) {
         throw std::invalid_argument("Key already exists");
     }
+    // TODO update iterators
     auto noteCpy = std::make_shared<list_type>(*notes_);
     noteCpy->emplace_front(k, v);
     index_->emplace(k, noteCpy->begin());
@@ -129,6 +130,7 @@ void binder<K, V>::insert_after(K const& prev_k, K const& k, V const& v) {
     if (it == index_->end() || index_->count(k)) {
         throw std::invalid_argument("Invalid key");
     }
+    // TODO update iterators
     auto noteCpy = std::make_shared<list_type>(*notes_);
     auto new_it = noteCpy->emplace(std::next(it->second), k, v);
     index_->emplace(k, new_it);
