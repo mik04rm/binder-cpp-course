@@ -32,7 +32,7 @@ template <typename K, typename V> class binder {
     binder(binder const&);
     binder(binder&&) noexcept;
 
-    binder& operator=(binder) noexcept;
+    binder& operator=(binder);
 
     void insert_front(K const& k, V const& v);
     void insert_after(K const& prev_k, K const& k, V const& v);
@@ -100,9 +100,10 @@ binder<K, V>::binder(binder&& other) noexcept
     : notes_(std::move(other.notes_)), index_(std::move(other.index_)) {}
 
 template <typename K, typename V>
-binder<K, V>& binder<K, V>::operator=(binder other) noexcept {
-    std::swap(notes_, other.notes_);
-    std::swap(index_, other.index_);
+binder<K, V>& binder<K, V>::operator=(binder other) {
+    ensure_unique();
+    notes_ = other.notes_;
+    index_ = other.index_;
     return *this;
 }
 
@@ -112,8 +113,11 @@ void binder<K, V>::insert_front(K const& k, V const& v) {
     if (index_->count(k)) {
         throw std::invalid_argument("Key already exists");
     }
-    notes_->emplace_front(k, v);
-    index_->emplace(k, notes_->begin());
+    // strong exc guarantee
+    auto notes_cpy(notes_);
+    notes_cpy->emplace_front(k, v);
+    index_->emplace(k, notes_cpy->begin());
+    notes_ = std::move(notes_cpy);
 }
 
 template <typename K, typename V>
@@ -123,8 +127,11 @@ void binder<K, V>::insert_after(K const& prev_k, K const& k, V const& v) {
     if (it == index_->end() || index_->count(k)) {
         throw std::invalid_argument("Invalid key");
     }
-    auto new_it = notes_->emplace(std::next(it->second), k, v);
+    // strong exc gurantee
+    auto notes_cpy(notes_);
+    auto new_it = notes_cpy->emplace(std::next(it->second), k, v);
     index_->emplace(k, new_it);
+    notes_ = std::move(notes_cpy);
 }
 
 template <typename K, typename V> void binder<K, V>::remove() {
@@ -136,6 +143,7 @@ template <typename K, typename V> void binder<K, V>::remove() {
     notes_->pop_front();
 }
 
+// ensure unique is whack
 template <typename K, typename V> void binder<K, V>::remove(K const& k) {
     ensure_unique();
     auto it = index_->find(k);
@@ -146,7 +154,9 @@ template <typename K, typename V> void binder<K, V>::remove(K const& k) {
     index_->erase(it);
 }
 
+// this should be fine
 template <typename K, typename V> V& binder<K, V>::read(K const& k) {
+    ensure_unique();
     auto it = index_->find(k);
     if (it == index_->end()) {
         throw std::invalid_argument("Key not found");
@@ -185,9 +195,11 @@ typename binder<K, V>::const_iterator binder<K, V>::cend() const noexcept {
 
 template <typename K, typename V> void binder<K, V>::ensure_unique() {
     if (!notes_.unique() || !index_.unique()) {
-        notes_ = std::make_shared<list_type>(*notes_);
-        index_ = std::make_shared<
+        auto notes_cpy = std::make_shared<list_type>(*notes_);
+        auto index_cpy = std::make_shared<
             std::unordered_map<K, typename list_type::iterator>>(*index_);
+        notes_ = std::move(notes_cpy);
+        index_ = std::move(index_cpy);
     }
 }
 
