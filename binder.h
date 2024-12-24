@@ -105,9 +105,6 @@ binder<K, V>::binder(binder&& other) noexcept
 template <typename K, typename V>
 binder<K, V>& binder<K, V>::operator=(binder other) {
     ensure_unique();
-    //auto noteCpy(other.notes_);
-    //index_.reset(other.index_);
-    //notes_.swap(noteCpy);
     notes_ = other.notes_;
     index_ = other.index_;
     return *this;
@@ -119,8 +116,7 @@ void binder<K, V>::insert_front(K const& k, V const& v) {
     if (index_->count(k)) {
         throw std::invalid_argument("Key already exists");
     }
-    // strong exc guarantee
-    auto noteCpy(notes_);
+    auto noteCpy = std::make_shared<list_type>(*notes_);
     noteCpy->emplace_front(k, v);
     index_->emplace(k, noteCpy->begin());
     notes_ = std::move(noteCpy);
@@ -133,8 +129,7 @@ void binder<K, V>::insert_after(K const& prev_k, K const& k, V const& v) {
     if (it == index_->end() || index_->count(k)) {
         throw std::invalid_argument("Invalid key");
     }
-    // strong exc gurantee
-    auto noteCpy(notes_);
+    auto noteCpy = std::make_shared<list_type>(*notes_);
     auto new_it = noteCpy->emplace(std::next(it->second), k, v);
     index_->emplace(k, new_it);
     notes_ = std::move(noteCpy);
