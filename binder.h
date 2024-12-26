@@ -112,7 +112,7 @@ binder<K, V>& binder<K, V>::operator=(binder other) {
 
 template <typename K, typename V>
 void binder<K, V>::insert_front(K const& k, V const& v) {
-    ensure_unique();
+    //ensure_unique();
     if (index_->count(k)) {
         throw std::invalid_argument("Key already exists");
     }
@@ -129,7 +129,7 @@ void binder<K, V>::insert_front(K const& k, V const& v) {
 
 template <typename K, typename V>
 void binder<K, V>::insert_after(K const& prev_k, K const& k, V const& v) {
-    ensure_unique();
+    //ensure_unique();
     auto it = index_->find(prev_k);
     if (it == index_->end() || index_->count(k)) {
         throw std::invalid_argument("Invalid key");
