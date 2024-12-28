@@ -5,16 +5,19 @@
 #include <list>
 #include <memory>
 #include <stdexcept>
-#include <unordered_map>
+#include <map>
+#include "binderT.h"
+#include <string>
+#include <type_traits>
 
-// TODO write some new tests!!!
+// TODO copy-constructor and assignment operator should copy contents in case of
+// shared V non-const reference by read()
 
-// TODO are const everywhere where they should be?
-// TODO are noexcept everywhere where it should be?
-// TODO (task statement) why copying would be O(n log n) instead of O(n)?
-// TODO swaps in operator= ?
-// TODO is copy-on-write implemented well?
-// TODO exception safety
+// TODO maybe rollback ensure_unique()
+
+// TODO write tests for copy-on-write
+
+// TODO write tests for exception safety
 
 namespace cxx {
 
@@ -24,15 +27,20 @@ template <typename K, typename V> class binder {
     using pair_type = std::pair<K, V>;
     using list_type = std::list<pair_type>;
     std::shared_ptr<list_type> notes_;
-    std::shared_ptr<std::unordered_map<K, typename list_type::iterator>> index_;
+    std::shared_ptr<std::map<K, typename list_type::iterator>> index_;
     void ensure_unique();
 
   public:
+  // DEBUG
+    void copyFrom(binder<Random, V> const& other);
+
+
     binder();
     binder(binder const&);
     binder(binder&&) noexcept;
+    ~binder() noexcept = default;
 
-    binder& operator=(binder) noexcept;
+    binder& operator=(binder);
 
     void insert_front(K const& k, V const& v);
     void insert_after(K const& prev_k, K const& k, V const& v);
@@ -88,23 +96,22 @@ template <typename K, typename V> class binder {
 template <typename K, typename V>
 binder<K, V>::binder()
     : notes_(std::make_shared<list_type>()),
-      index_(std::make_shared<
-             std::unordered_map<K, typename list_type::iterator>>()) {}
+      index_(std::make_shared<std::map<K, typename list_type::iterator>>()) {}
 
 template <typename K, typename V>
 binder<K, V>::binder(binder const& other)
     : notes_(other.notes_), index_(other.index_) {}
 
 template <typename K, typename V>
-binder<K, V>::binder(binder&& other) noexcept
-    : notes_(std::move(other.notes_)), index_(std::move(other.index_)) {}
+binder<K, V>::binder(binder&& other) noexcept {
+    notes_ = other.notes_;
+    index_ = other.index_;
+    other.notes_ = nullptr;
+    other.index_ = nullptr;
+}
 
-
-// does that make sense even, noteCpy will be destroyed
-// bcs out of scope
 template <typename K, typename V>
 binder<K, V>& binder<K, V>::operator=(binder other) {
-    ensure_unique();
     notes_ = other.notes_;
     index_ = other.index_;
     return *this;
@@ -112,61 +119,55 @@ binder<K, V>& binder<K, V>::operator=(binder other) {
 
 template <typename K, typename V>
 void binder<K, V>::insert_front(K const& k, V const& v) {
-    //ensure_unique();
     if (index_->count(k)) {
         throw std::invalid_argument("Key already exists");
     }
-    // TODO update iterators
-    auto note_cpy = std::make_shared<list_type>(*notes_);
-    note_cpy->emplace_front(k, v);
-    // create empty map and fill it again
-    auto index_cpy = std::make_shared<std::map<K, typename list_type::iterator>>();
-    for (list_type::iterator itt = note_cpy->begin(); itt != note_cpy->end(); itt++)
-        index_cpy->emplace(itt->first, itt);
-    index_ = std::move(index_cpy);
-    notes_ = std::move(note_cpy);
+    ensure_unique();
+    notes_->emplace_front(k, v);
+    try {
+        index_->emplace(k, notes_->begin());
+    } catch (...) {
+        notes_->pop_front();
+        throw;
+    }   
 }
 
 template <typename K, typename V>
 void binder<K, V>::insert_after(K const& prev_k, K const& k, V const& v) {
-    //ensure_unique();
     auto it = index_->find(prev_k);
     if (it == index_->end() || index_->count(k)) {
         throw std::invalid_argument("Invalid key");
     }
-    // TODO update iterators
-    auto note_cpy = std::make_shared<list_type>(*notes_);
-    note_cpy->emplace(std::next(it->second), k, v);
-    auto index_cpy = std::make_shared<std::map<K, typename list_type::iterator>>();
-    for (list_type::iterator itt = note_cpy->begin(); itt != note_cpy->end(); itt++)
-        index_cpy->emplace(itt->first, itt);
-    index_ = std::move(index_cpy);
-    notes_ = std::move(note_cpy);
+    ensure_unique();
+    auto new_it = notes_->emplace(std::next(it->second), k, v);
+    try {
+        index_->emplace(k, new_it);
+    } catch (...) {
+        notes_->erase(new_it);
+        throw;
+    }
 }
 
 template <typename K, typename V> void binder<K, V>::remove() {
-    ensure_unique();
     if (notes_->empty()) {
         throw std::invalid_argument("Binder is empty");
     }
+    ensure_unique();
     index_->erase(notes_->begin()->first);
     notes_->pop_front();
 }
 
-// ensure unique is whack
 template <typename K, typename V> void binder<K, V>::remove(K const& k) {
-    ensure_unique();
     auto it = index_->find(k);
     if (it == index_->end()) {
         throw std::invalid_argument("Key not found");
     }
+    ensure_unique();
     notes_->erase(it->second);
     index_->erase(it);
 }
 
-// this should be fine
 template <typename K, typename V> V& binder<K, V>::read(K const& k) {
-    ensure_unique();
     auto it = index_->find(k);
     if (it == index_->end()) {
         throw std::invalid_argument("Key not found");
@@ -188,9 +189,11 @@ template <typename K, typename V> size_t binder<K, V>::size() const noexcept {
 }
 
 template <typename K, typename V> void binder<K, V>::clear() noexcept {
-    ensure_unique();
-    notes_->clear();
-    index_->clear();
+    if (!notes_->empty()) {
+        ensure_unique();
+        notes_->clear();
+        index_->clear();
+    }
 }
 
 template <typename K, typename V>
@@ -204,13 +207,31 @@ typename binder<K, V>::const_iterator binder<K, V>::cend() const noexcept {
 }
 
 template <typename K, typename V> void binder<K, V>::ensure_unique() {
-    if (!notes_.unique() || !index_.unique()) {
-        auto noteCpy = std::make_shared<list_type>(*notes_);
-        auto indexCpy = std::make_shared<
-            std::unordered_map<K, typename list_type::iterator>>(*index_);
-        notes_ = std::move(noteCpy);
-        index_ = std::move(indexCpy);
+    if (!notes_.unique()) {
+        auto notes_cpy = std::make_shared<list_type>(*notes_);
+        auto index_cpy = std::make_shared<std::map<K, typename list_type::iterator>>();
+        for (auto it = notes_cpy->begin(); it != notes_cpy->end(); it++) {
+            index_cpy->emplace(it->first, it);
+        }
+        notes_ = notes_cpy;
+        index_ = index_cpy;
     }
+}
+
+template <typename K, typename V>
+void binder<K, V>::copyFrom(binder<Random, V> const& other) {
+// use secret constructor
+
+        list_type noteCpy;
+        for (auto e: *(other.notes_)) {
+            noteCpy.emplace_back(std::make_pair(Random((e.first).value, false), e.second));
+        }
+        auto index_cpy = std::make_shared<std::map<K, typename list_type::iterator>>();
+        for (auto it = notes_->begin(); it != notes_->end(); it++) {
+            index_cpy->emplace(it->first, it);
+        }
+        notes_ = std::make_shared<list_type>(&noteCpy);
+        index_ = std::move(index_cpy);
 }
 
 } // namespace cxx
