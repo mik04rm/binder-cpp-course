@@ -3,18 +3,10 @@
 
 #include <algorithm>
 #include <list>
+#include <map>
 #include <memory>
 #include <stdexcept>
-#include <map>
 
-// TODO copy-constructor and assignment operator should copy contents in case of
-// shared V non-const reference by read()
-
-// TODO maybe rollback ensure_unique()
-
-// TODO write tests for copy-on-write
-
-// TODO write tests for exception safety
 
 namespace cxx {
 
@@ -25,6 +17,7 @@ template <typename K, typename V> class binder {
     using list_type = std::list<pair_type>;
     std::shared_ptr<list_type> notes_;
     std::shared_ptr<std::map<K, typename list_type::iterator>> index_;
+    bool writeable_ref = false;
     void ensure_unique();
 
   public:
@@ -33,7 +26,7 @@ template <typename K, typename V> class binder {
     binder(binder&&) noexcept;
     ~binder() noexcept = default;
 
-    binder& operator=(binder);
+    binder& operator=(binder const&);
 
     void insert_front(K const& k, V const& v);
     void insert_after(K const& prev_k, K const& k, V const& v);
@@ -42,7 +35,7 @@ template <typename K, typename V> class binder {
     V& read(K const&);
     V const& read(K const&) const;
     size_t size() const noexcept;
-    void clear() noexcept;
+    void clear();
 
     class const_iterator {
       public:
@@ -91,22 +84,61 @@ binder<K, V>::binder()
     : notes_(std::make_shared<list_type>()),
       index_(std::make_shared<std::map<K, typename list_type::iterator>>()) {}
 
-template <typename K, typename V>
-binder<K, V>::binder(binder const& other)
-    : notes_(other.notes_), index_(other.index_) {}
+template <typename K, typename V> binder<K, V>::binder(binder const& other) {
+
+    auto old_notes = notes_;
+    auto old_index = index_;
+
+    notes_ = other.notes_;
+    index_ = other.index_;
+
+    try {
+        if (other.writeable_ref) {
+            ensure_unique();
+        }
+    } catch (...) {
+        notes_ = old_notes;
+        index_ = old_index;
+        throw;
+    }
+
+    writeable_ref = false;
+}
 
 template <typename K, typename V>
 binder<K, V>::binder(binder&& other) noexcept {
     notes_ = other.notes_;
     index_ = other.index_;
+    writeable_ref = other.writeable_ref;
     other.notes_ = nullptr;
     other.index_ = nullptr;
+    other.writeable_ref = false;
 }
 
 template <typename K, typename V>
-binder<K, V>& binder<K, V>::operator=(binder other) {
+binder<K, V>& binder<K, V>::operator=(binder const& other) {
+    if (this == &other) {
+        return *this;
+    }
+
+    auto old_notes = notes_;
+    auto old_index = index_;
+
     notes_ = other.notes_;
     index_ = other.index_;
+
+    try {
+        if (other.writeable_ref) {
+            ensure_unique();
+        }
+    } catch (...) {
+        notes_ = old_notes;
+        index_ = old_index;
+        throw;
+    }
+
+    writeable_ref = false;
+
     return *this;
 }
 
@@ -115,14 +147,32 @@ void binder<K, V>::insert_front(K const& k, V const& v) {
     if (index_->count(k)) {
         throw std::invalid_argument("Key already exists");
     }
-    ensure_unique();
-    notes_->emplace_front(k, v);
+
+    bool shared = !notes_.unique();
+
+    auto old_notes = notes_;
+    auto old_index = index_;
+    size_t prv_size = notes_->size();
+
     try {
+        if (shared) {
+            ensure_unique();
+        }
+        notes_->emplace_front(k, v);
         index_->emplace(k, notes_->begin());
     } catch (...) {
-        notes_->pop_front();
+        if (notes_->size() != prv_size) {
+            notes_->pop_front();
+        }
+        if (index_->size() != prv_size) {
+            index_->erase(k);
+        }
+        notes_ = old_notes;
+        index_ = old_index;
         throw;
-    }   
+    }
+
+    writeable_ref = false;
 }
 
 template <typename K, typename V>
@@ -131,23 +181,59 @@ void binder<K, V>::insert_after(K const& prev_k, K const& k, V const& v) {
     if (it == index_->end() || index_->count(k)) {
         throw std::invalid_argument("Invalid key");
     }
-    ensure_unique();
-    auto new_it = notes_->emplace(std::next(it->second), k, v);
+
+    bool shared = !notes_.unique();
+
+    auto old_notes = notes_;
+    auto old_index = index_;
+    size_t prv_size = notes_->size();
+
+    auto new_it = notes_->end();
+
     try {
+        if (shared) {
+            ensure_unique();
+        }
+        new_it = notes_->emplace(std::next(it->second), k, v);
         index_->emplace(k, new_it);
     } catch (...) {
-        notes_->erase(new_it);
+        if (notes_->size() != prv_size) {
+            notes_->erase(new_it);
+        }
+        if (index_->size() != prv_size) {
+            index_->erase(k);
+        }
+        notes_ = old_notes;
+        index_ = old_index;
         throw;
     }
+
+    writeable_ref = false;
 }
 
 template <typename K, typename V> void binder<K, V>::remove() {
     if (notes_->empty()) {
         throw std::invalid_argument("Binder is empty");
     }
-    ensure_unique();
+
+    bool shared = !notes_.unique();
+    auto old_notes = notes_;
+    auto old_index = index_;
+
+    try {
+        if (shared) {
+            ensure_unique();
+        }
+    } catch (...) {
+        notes_ = old_notes;
+        index_ = old_index;
+        throw;
+    }
+
     index_->erase(notes_->begin()->first);
     notes_->pop_front();
+
+    writeable_ref = false;
 }
 
 template <typename K, typename V> void binder<K, V>::remove(K const& k) {
@@ -155,17 +241,48 @@ template <typename K, typename V> void binder<K, V>::remove(K const& k) {
     if (it == index_->end()) {
         throw std::invalid_argument("Key not found");
     }
-    ensure_unique();
+
+    bool shared = !notes_.unique();
+    auto old_notes = notes_;
+    auto old_index = index_;
+
+    try {
+        if (shared) {
+            ensure_unique();
+        }
+    } catch (...) {
+        notes_ = old_notes;
+        index_ = old_index;
+        throw;
+    }
+
     notes_->erase(it->second);
     index_->erase(it);
+
+    writeable_ref = false;
 }
 
 template <typename K, typename V> V& binder<K, V>::read(K const& k) {
-    auto it = index_->find(k);
-    if (it == index_->end()) {
+    if (index_->find(k) == index_->end()) {
         throw std::invalid_argument("Key not found");
     }
-    return it->second->second;
+
+    bool shared = !notes_.unique();
+    auto old_index = index_;
+    auto old_notes = notes_;
+
+    try {
+        if (shared) {
+            ensure_unique();
+        }
+    } catch (...) {
+        notes_ = old_notes;
+        index_ = old_index;
+        throw;
+    }
+
+    writeable_ref = true;
+    return index_->find(k)->second->second;
 }
 
 template <typename K, typename V>
@@ -181,12 +298,29 @@ template <typename K, typename V> size_t binder<K, V>::size() const noexcept {
     return notes_->size();
 }
 
-template <typename K, typename V> void binder<K, V>::clear() noexcept {
-    if (!notes_->empty()) {
-        ensure_unique();
-        notes_->clear();
-        index_->clear();
+template <typename K, typename V> void binder<K, V>::clear() {
+    if (notes_->empty()) {
+        return;
     }
+
+    bool shared = !notes_.unique();
+    auto old_notes = notes_;
+    auto old_index = index_;
+
+    try {
+        if (shared) {
+            ensure_unique();
+        }
+    } catch (...) {
+        // unnecessary
+        notes_ = old_notes;
+        index_ = old_index;
+        throw;
+    }
+
+    notes_->clear();
+    index_->clear();
+    writeable_ref = false;
 }
 
 template <typename K, typename V>
@@ -200,15 +334,14 @@ typename binder<K, V>::const_iterator binder<K, V>::cend() const noexcept {
 }
 
 template <typename K, typename V> void binder<K, V>::ensure_unique() {
-    if (!notes_.unique()) {
-        auto notes_cpy = std::make_shared<list_type>(*notes_);
-        auto index_cpy = std::make_shared<std::map<K, typename list_type::iterator>>();
-        for (auto it = notes_cpy->begin(); it != notes_cpy->end(); it++) {
-            index_cpy->emplace(it->first, it);
-        }
-        notes_ = notes_cpy;
-        index_ = index_cpy;
+    auto notes_cpy = std::make_shared<list_type>(*notes_);
+    auto index_cpy =
+        std::make_shared<std::map<K, typename list_type::iterator>>();
+    for (auto it = notes_cpy->begin(); it != notes_cpy->end(); it++) {
+        index_cpy->emplace(it->first, it);
     }
+    notes_ = notes_cpy;
+    index_ = index_cpy;
 }
 
 } // namespace cxx
