@@ -20,7 +20,7 @@ template <typename K, typename V> class binder {
     // True iff the binder has a shared writeable reference.
     bool writeable_ref;
 
-    // It make a deep copy of the original binder.
+    // It makes a deep copy of the original binder.
     void make_copy();
 
     // `make_copy` but in case of exception, restores the original state.
